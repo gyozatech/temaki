@@ -1,6 +1,7 @@
 package temaki
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -18,6 +19,9 @@ type Route struct {
 
 func NewRoute(method, pattern string, handler http.HandlerFunc) Route {
 	pathParamsMap, regexPath := parseURL(pattern)
+	if regexPath[0] != '/' {
+		regexPath = fmt.Sprintf("/%s", regexPath)
+	}
 	return Route{method, regexp.MustCompile("^" + regexPath + "$"), pathParamsMap, handler}
 }
 

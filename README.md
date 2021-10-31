@@ -19,19 +19,21 @@ package main
 import (
     "github.com/gyozatech/temaki"
     "log"
-	"net/http"
+    "net/http"
+    "fmt"
+    "strconv"
 )
 
 func main() {
     router := temaki.NewRouter()
     
     router.UseMiddleware(exampleMiddleware)
-    router.GET("api/v1/store/{storeId}/product/{productId}", getProductHandler)
-    router.POST("api/v1/store/{storeId([^/]+)}/product/{productId([0-9]+)}", addProductHandler)
-    router.PATCH("api/v1/store/{storeId([^/]+)}/product/{productId}", updateProductHandler)
-    router.DELETE("api/v1/store/{storeId}/product/{productId([0-9]+)}", deleteProductHandler)
+    router.GET("/api/v1/stores/{storeId}/products/{productId}", getProductHandler)
+    router.POST("/api/v1/stores/{storeId([^/]+)}/products/{productId([0-9]+)}", addProductHandler)
+    router.PATCH("/api/v1/stores/{storeId([^/]+)}/products/{productId}", updateProductHandler)
+    router.DELETE("/api/v1/stores/{storeId}/products/{productId([0-9]+)}", deleteProductHandler)
 
-    log.Error(router.Start(8080))
+    log.Fatal(router.Start(8080))
 
 }
 
