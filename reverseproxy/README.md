@@ -21,4 +21,17 @@ You can get the calls to `http://localhost:8080/service-1/api/v1/*` to be all pr
 ```bash
 export SERVICE_1_PROXY_URL='(http://localhost:8081)/service-1/api/v1/'
 ```
+Then you can import and use the library as follows:
 
+```go
+package main
+
+import (
+	"log"
+	"github.com/gyozatech/temaki/reverseproxy"
+)
+
+func main() {
+	log.Fatal(reverseproxy.NewReverseProxy().Start(8080))
+}
+```
