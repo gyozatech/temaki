@@ -8,20 +8,23 @@ This package contains a simple HTTP/S Reverse Proxy meant to be imported in your
 
 ## How it works
 
-You must list your services by using the following convention:
+You must list your services though enviroment variable by using the following convention:
 
 name: `<SERVICENAME>_PROXY_URL`
 value: `(HOST)/common/path/`
   
-to get all the calls coming to the reverse proxy host `/common/path/*` to be proxied to their respective hosts.
+to get all the calls coming to the reverse proxy host at the path `/common/path/*` to be proxied to their respective hosts.
   
-For example you have your reverse proxy server listening to `http://localhost:8080` and your backend service listening to `http://localhost:8081/service-1/api/v1/*`
-You can get the calls to `http://localhost:8080/service-1/api/v1/*` to be all proxied to `http://localhost:8081/service-1/api/v1/*` by setting the following environment variable:
+For example if you have your reverse proxy server listening to `http://localhost:8080` and your backend service listening to `http://localhost:8081/service-1/api/v1/*`
+
+You can get the calls coming to your reverse proxy host at the paths `http://localhost:8080/service-1/api/v1/*` to be all proxied to the backend service at the paths `http://localhost:8081/service-1/api/v1/*`.
+
+This mechanism can be created by setting the following environment variable:
 
 ```bash
 export SERVICE_1_PROXY_URL='(http://localhost:8081)/service-1/api/v1/'
 ```
-Then you can import and use the library as follows:
+And by programming your reverse proxy this way:
 
 ```go
 package main
