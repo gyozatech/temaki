@@ -32,9 +32,23 @@ package main
 import (
 	"log"
 	"github.com/gyozatech/temaki/reverseproxy"
+	"github.com/gyozatech/temaki/middlewares"
+	// "github.com/gyozatech/noodlog" // for logger a)
 )
 
 func main() {
-	log.Fatal(reverseproxy.NewReverseProxy().Start(8080))
+
+	// Setting a custom logger between a) or b): in this example we're using b)
+	// a): set a custom logger for the middlewares (a logger with Info(message ...interface{}) function)
+	//    middlewares.SetInfoLogger(noodlog.NewLogger().EnableTraceCaller())
+	// b)  set a custom logger for the middlewares (a logger with Println(message ...interface{}) function)
+	var logger *log.Logger = log.New(os.Stdout, "", log.LstdFlags)
+	middlewares.SetPrintLogger(logger)
+	
+	log.Fatal(reverseproxy.NewReverseProxy().
+    	                       UseMiddleware(middlewares.RequestLoggerMiddleware).
+			       UseMiddleware(middlewares.CORSMiddleware).
+			       UseMiddleware(middlewares.RecoverPanicMiddleware).
+			       Start(8080))
 }
 ```
