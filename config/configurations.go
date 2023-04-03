@@ -50,7 +50,12 @@ func LoadEnvVariablesFromFile() error {
 			if strings.Contains(key, "#") {
 				continue
 			}
-			value := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(keyVal[1], "\"", ""), "'", ""), "`", "")
+			value := keyVal[1]
+			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+				(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) ||
+				(strings.HasPrefix(value, "`") && strings.HasSuffix(value, "`")) {
+				value = value[1 : len(value)-1]
+			}
 			vars[key] = value
 		}
 	}
