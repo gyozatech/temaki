@@ -68,6 +68,6 @@ func LoadEnvVariablesFromFile() error {
 func LoadEnvVariablesFromOs() {
 	for _, env := range os.Environ() {
 		pair := strings.Split(env, "=")
-		vars[pair[0]] = pair[1]
+		vars[pair[0]] = strings.Replace(env, pair[0], "", 1)
 	}
 }
