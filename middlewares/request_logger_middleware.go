@@ -7,53 +7,7 @@ import (
 	"net/http/httputil"
 	"strings"
 	"time"
-
-	"github.com/gyozatech/noodlog"
 )
-
-var printLog printLogger
-var infoLog infoLogger
-
-// SetPrintLogger sets a logger with the Print() method
-func SetPrintLogger(l printLogger) {
-	printLog = l
-}
-
-// SetInfoLogger sets a logger with the Info() method
-func SetInfoLogger(l infoLogger) {
-	infoLog = l
-}
-
-// SetLogger sets the logger for the middlewares
-func SetLogger(l interface{}) {
-	iLogger, isInfoLogger := l.(infoLogger)
-	if isInfoLogger {
-		SetInfoLogger(iLogger)
-		return
-	}
-	pLogger, isPrintLogger := l.(printLogger)
-	if isPrintLogger {
-		SetPrintLogger(pLogger)
-	}
-}
-
-// InitDefaultLogger sets the default logger to "github.com/gyozatech/noodlog" is no other logger has been set
-func InitDefaultLogger() {
-	if infoLog == nil && printLog == nil {
-		infoLog = noodlog.NewLogger().EnableTraceCaller()
-	}
-}
-
-func info(message ...interface{}) {
-	if printLog != nil {
-		printLog.Println(message)
-		return
-	}
-	InitDefaultLogger()
-	infoLog.Info(message)
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////
 
 // RequestLoggerMiddleware is the middleware layer to log all the HTTP requests
 func RequestLoggerMiddleware(next http.Handler) http.Handler {
@@ -62,12 +16,12 @@ func RequestLoggerMiddleware(next http.Handler) http.Handler {
 		rww := NewResponseWriterWrapper(&w, r)
 		defer func() {
 			if rec := recover(); rec != nil {
-				info("Panic recovered in the RequestLoggerMiddleware:", rec)
+				logInfo("Panic recovered in the RequestLoggerMiddleware:", rec)
 				next.ServeHTTP(w, r)
 			}
 		}()
 		defer func() {
-			info(ReqRespLogStruct{
+			logInfo(ReqRespLogStruct{
 				Request:  HTTPRequest(r),
 				ExecTime: time.Since(start),
 				Response: HTTPResponse(*rww.statusCode, rww.Header(), rww.r.RequestURI, rww.body.String()),
@@ -138,14 +92,6 @@ type ResponseStruct struct {
 	Body    interface{}       `json:"body,omitempty"`
 }
 
-type printLogger interface {
-	Println(message ...interface{})
-}
-
-type infoLogger interface {
-	Info(message ...interface{})
-}
-
 // HTTPRequest static function flatten pointers of HTTP Request and obscurate passwords to prepare for logging
 func HTTPRequest(r *http.Request) RequestStruct {
 	if r == nil {
@@ -154,7 +100,7 @@ func HTTPRequest(r *http.Request) RequestStruct {
 
 	requestDump, err := httputil.DumpRequest(r, true)
 	if err != nil {
-		info(err)
+		logInfo(err)
 	}
 
 	var req RequestStruct
