@@ -14,16 +14,32 @@ import (
 var printLog printLogger
 var infoLog infoLogger
 
+// SetPrintLogger sets a logger with the Print() method
 func SetPrintLogger(l printLogger) {
 	printLog = l
 }
 
+// SetInfoLogger sets a logger with the Info() method
 func SetInfoLogger(l infoLogger) {
 	infoLog = l
 }
 
+// SetLogger sets the logger for the middlewares
+func SetLogger(l interface{}) {
+	iLogger, isInfoLogger := l.(infoLogger)
+	if isInfoLogger {
+		SetInfoLogger(iLogger)
+		return
+	}
+	pLogger, isPrintLogger := l.(printLogger)
+	if isPrintLogger {
+		SetPrintLogger(pLogger)
+	}
+}
+
+// InitDefaultLogger sets the default logger to "github.com/gyozatech/noodlog" is no other logger has been set
 func InitDefaultLogger() {
-	if infoLog == nil {
+	if infoLog == nil && printLog == nil {
 		infoLog = noodlog.NewLogger().EnableTraceCaller()
 	}
 }
@@ -45,7 +61,12 @@ func RequestLoggerMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rww := NewResponseWriterWrapper(&w, r)
 		defer func() {
-
+			if rec := recover(); rec != nil {
+				info("Panic recovered in the RequestLoggerMiddleware:", rec)
+				next.ServeHTTP(w, r)
+			}
+		}()
+		defer func() {
 			info(ReqRespLogStruct{
 				Request:  HTTPRequest(r),
 				ExecTime: time.Since(start),
