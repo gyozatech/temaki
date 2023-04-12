@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httputil"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -14,20 +15,22 @@ func RequestLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rww := NewResponseWriterWrapper(&w, r)
-		defer func() {
-			if rec := recover(); rec != nil {
-				logInfo("Panic recovered in the RequestLoggerMiddleware:", rec)
-				next.ServeHTTP(w, r)
-			}
-		}()
+
+		next.ServeHTTP(rww, r)
+
 		defer func() {
 			logInfo(ReqRespLogStruct{
 				Request:  HTTPRequest(r),
 				ExecTime: time.Since(start),
 				Response: HTTPResponse(*rww.statusCode, rww.Header(), rww.r.RequestURI, rww.body.String()),
 			})
+			defer func() {
+				if rec := recover(); rec != nil {
+					logError("Panic recovered in the RequestLoggerMiddleware: ", string(debug.Stack()))
+				}
+			}()
 		}()
-		next.ServeHTTP(rww, r)
+
 	})
 }
 
