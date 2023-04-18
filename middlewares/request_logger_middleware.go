@@ -16,20 +16,23 @@ func RequestLoggerMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		rww := NewResponseWriterWrapper(&w, r)
 
-		next.ServeHTTP(rww, r)
-
 		defer func() {
-			logInfo(ReqRespLogStruct{
-				Request:  HTTPRequest(r),
-				ExecTime: time.Since(start),
-				Response: HTTPResponse(*rww.statusCode, rww.Header(), rww.r.RequestURI, rww.body.String()),
-			})
+
 			defer func() {
 				if rec := recover(); rec != nil {
 					logError("Panic recovered in the RequestLoggerMiddleware: ", string(debug.Stack()))
 				}
 			}()
+
+			logInfo(ReqRespLogStruct{
+				Request:  HTTPRequest(r),
+				ExecTime: time.Since(start),
+				Response: HTTPResponse(*rww.statusCode, rww.Header(), rww.r.RequestURI, rww.body.String()),
+			})
+
 		}()
+
+		next.ServeHTTP(rww, r)
 
 	})
 }
