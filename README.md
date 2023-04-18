@@ -35,23 +35,22 @@ func main() {
     router := temaki.NewRouter()
 
     // passing a custom logger to the middlewares (the default is gyozatch/noodlog)
-	middlewares.SetLogger(logger)
+    middlewares.SetLogger(logger)
     
     // provided temaki middlewares
     router.UseMiddleware(middlewares.RecoverPanicMiddleware)
     router.UseMiddleware(middlewares.RequestLoggerMiddleware)
     router.UseMiddleware(middlewares.CORSMiddleware)
-	// custom middleware
-	router.UseMiddleware(authMiddleware)
+    // custom middleware
+    router.UseMiddleware(authMiddleware)
 
-	// routes
+    // routes
     router.GET("/api/v1/stores/{storeId}/products/{productId}", getProductHandler)
     router.POST("/api/v1/stores/{storeId([^/]+)}/products/{productId([0-9]+)}", addProductHandler)
     router.PATCH("/api/v1/stores/{storeId([^/]+)}/products/{productId}", updateProductHandler)
     router.DELETE("/api/v1/stores/{storeId}/products/{productId([0-9]+)}", deleteProductHandler)
 
     log.Fatal(router.Start(8080))
-
 }
 
 // MIDDLEWARE
