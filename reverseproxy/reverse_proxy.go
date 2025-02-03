@@ -2,130 +2,138 @@ package reverseproxy
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
 )
 
-var rgxHost = regexp.MustCompile(`\((.*?)\)`)
+// Middleware represent a HTTP middleware for all incoming requests
+type Middleware func(next http.Handler) http.Handler
 
-type RequestModifier func(req *http.Request)
-type ResponseModifier func(*http.Response) error
-type ErrorHandler func() func(http.ResponseWriter, *http.Request, error)
-type Middleware func(handler http.Handler) http.Handler
+// PathPrefix is the prefix of the path to find a match in the request path
+type PathPrefix string
 
-func (rp *ReverseProxy) NewProxy(targetHost string) (*httputil.ReverseProxy, error) {
-	url, err := url.Parse(targetHost)
-	if err != nil {
-		return nil, err
-	}
+// TargetHost is the destination host to which to proxy the whole request after the PathPrefix removal
+type TargetHost string
 
-	proxy := httputil.NewSingleHostReverseProxy(url)
+// PathPrefixRoutesMap is the map of PathPrefixes and TargetHosts to map the available routes for the reverse proxy
+type PathPrefixRoutesMap map[PathPrefix]TargetHost
 
-	if rp.ReqModifier != nil {
-		originalDirector := proxy.Director
-		proxy.Director = func(req *http.Request) {
-			originalDirector(req)
-			(*rp.ReqModifier)(req)
-		}
-	}
-	if rp.RespModifier != nil {
-		proxy.ModifyResponse = *rp.RespModifier
-	}
-	if rp.ErrHandler != nil {
-		var errHandler func() func(http.ResponseWriter, *http.Request, error) = *rp.ErrHandler
-		proxy.ErrorHandler = errHandler()
-	}
-	return proxy, nil
-}
-
-// ProxyRequestHandler handles the http request using proxy
-func ProxyRequestHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		proxy.ServeHTTP(w, r)
-	}
-}
-
+// ReverseProxy is the instance of the reverse proxy server
 type ReverseProxy struct {
-	Middlewares  *[]Middleware
-	ReqModifier  *RequestModifier
-	RespModifier *ResponseModifier
-	ErrHandler   *ErrorHandler
+	middlewares         []Middleware
+	pathPrefixRoutesMap PathPrefixRoutesMap
 }
 
-func NewReverseProxy() *ReverseProxy {
-	return &ReverseProxy{&[]Middleware{}, nil, nil, nil}
+// WithMiddlewares allows specifying the http middleware to be applied to all routes
+func (r *ReverseProxy) WithMiddlewares(middlewares ...Middleware) *ReverseProxy {
+	if r.middlewares == nil {
+		r.middlewares = []Middleware{}
+	}
+	r.middlewares = append(r.middlewares, middlewares...)
+	return r
 }
 
-func (rp *ReverseProxy) UseMiddleware(middleware ...Middleware) *ReverseProxy {
-	*rp.Middlewares = append(*rp.Middlewares, middleware...)
-	return rp
-}
-
-func (rp *ReverseProxy) UseRequestModifier(requestModifier RequestModifier) *ReverseProxy {
-	rp.ReqModifier = &requestModifier
-	return rp
-}
-
-func (rp *ReverseProxy) UseResponseModifier(responseModifier ResponseModifier) *ReverseProxy {
-	rp.RespModifier = &responseModifier
-	return rp
-}
-
-func (rp *ReverseProxy) UseErrorHandler(errorHandler ErrorHandler) *ReverseProxy {
-	rp.ErrHandler = &errorHandler
-	return rp
-}
-
-func (rp *ReverseProxy) Start(port int) error {
-	rp.scanDomains()
-	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
-}
-
-func (rp *ReverseProxy) scanDomains() map[string]*httputil.ReverseProxy {
-	proxies := map[string]*httputil.ReverseProxy{}
+// CollectPathPrefixRoutesFromEnvVar collects the env vars like:
+// PROXY_RULE_WEATHER_API=/weather/>https://api.weather.com
+// PROXY_RULE_WEATHER_API=/geo/>https://api.geo.com
+// This means that a call to:
+//
+//	https://<proxy-host>/weather/v1/today?zone=EU
+//
+// will be sent to:
+//
+//	https://api.weather.com/v1/today?zone=EU
+func CollectPathPrefixRoutesFromEnvVar() PathPrefixRoutesMap {
+	var routesMap PathPrefixRoutesMap = make(map[PathPrefix]TargetHost, 0)
 	var envVars []string = os.Environ()
 	for _, envVar := range envVars {
+
 		envVarName := strings.Split(envVar, "=")[0]
-		if strings.HasSuffix(envVarName, "_PROXY_URL") {
-			rp.registerDomain(&proxies, envVarName)
+		envVarValue := strings.Split(envVar, "=")[1]
+
+		if strings.HasPrefix(envVarName, "PROXY_RULE_") {
+			proxyRule := strings.Split(envVarValue, ">")
+			routesMap[PathPrefix(proxyRule[0])] = TargetHost(proxyRule[1])
 		}
 	}
-	return proxies
+	return routesMap
 }
 
-func (rp *ReverseProxy) registerDomain(proxies *map[string]*httputil.ReverseProxy, envVarName string) {
-	envVarValue := os.Getenv(envVarName)
-	matches := rgxHost.FindAllString(envVarValue, -1)
-	if len(matches) != 1 {
-		panic(fmt.Errorf("invalid param passed for env var %s", envVarName))
+func (r *ReverseProxy) applyMiddlewares(handler http.Handler) http.Handler {
+	for _, m := range r.middlewares {
+		handler = m(handler)
 	}
-	host := matches[0]
-	host = host[1 : len(host)-1]
-	basePath := adaptPath(envVarValue)
+	return handler
+}
 
-	proxy, err := rp.NewProxy(host)
+// New is used to create a new instance of a reverse proxy
+func New(routes PathPrefixRoutesMap) *ReverseProxy {
+	return &ReverseProxy{
+		middlewares:         []Middleware{},
+		pathPrefixRoutesMap: adaptRoutesMap(routes),
+	}
+}
+
+func adaptRoutesMap(routes PathPrefixRoutesMap) PathPrefixRoutesMap {
+	adaptedRoutesMap := make(PathPrefixRoutesMap, 0)
+	for prefix, host := range routes {
+		prefixStr := strings.ReplaceAll(string(prefix), " ", "")
+		hostStr := strings.ReplaceAll(string(host), " ", "")
+		if !strings.HasPrefix(prefixStr, "/") {
+			prefixStr = "/" + prefixStr
+		}
+		if !strings.HasSuffix(prefixStr, "/") {
+			prefixStr = prefixStr + "/"
+		}
+		if !strings.HasPrefix(hostStr, "http") {
+			hostStr = "http://" + hostStr
+		}
+		adaptedRoutesMap[PathPrefix(prefixStr)] = TargetHost(strings.TrimSuffix(hostStr, "/"))
+	}
+	return adaptedRoutesMap
+}
+
+// ReverseProxyHandler creates a reverse proxy for the specified target URL.
+// It also supports optional path rewriting.
+func ReverseProxyHandler(target string, rewritePath string) http.Handler {
+	targetURL, err := url.Parse(target)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error parsing target URL: %v", err)
 	}
-	var handler http.Handler = http.HandlerFunc(ProxyRequestHandler(proxy))
-	for _, middleware := range *rp.Middlewares {
-		handler = middleware(handler)
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+
+		if rewritePath != "" && strings.HasPrefix(req.URL.Path, rewritePath) {
+			newPath := strings.TrimPrefix(req.URL.Path, rewritePath)
+			if !strings.HasPrefix(newPath, "/") {
+				newPath = "/" + newPath
+			}
+			req.URL.Path = newPath
+		}
+		req.Host = targetURL.Host
 	}
-	http.Handle(basePath, handler)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Proxying request to target: %s%s", target, r.URL.Path)
+		proxy.ServeHTTP(w, r)
+	})
 }
 
-func adaptPath(envVarValue string) string {
-	basePath := strings.Split(envVarValue, ")")[1]
+// Start starts the reverse proxy on the specified port
+func (r *ReverseProxy) Start(port int) error {
 
-	if basePath[0] != '/' {
-		basePath = fmt.Sprintf("/%s", basePath)
+	for pathPrefix, targetHost := range r.pathPrefixRoutesMap {
+		http.Handle(string(pathPrefix), r.applyMiddlewares(ReverseProxyHandler(string(targetHost), string(pathPrefix))))
 	}
-	if basePath[len(basePath)-1] != '/' {
-		basePath = fmt.Sprintf("%s/", basePath)
-	}
-	return basePath
+
+	log.Printf("Starting reverse proxy server on port %d", port)
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }
