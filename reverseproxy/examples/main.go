@@ -7,21 +7,27 @@ import (
 	"os"
 
 	"github.com/gyozatech/temaki/reverseproxy"
+	"github.com/gyozatech/temaki/middlewares"
 )
 
 func main() {
+
 	// you must start main_s1.go and main_s2.go first
-	os.Setenv("S1_SERVICE_PROXY_URL", "(http://localhost:8081)/s1-service/api/v1/")
-	os.Setenv("S2_SERVICE_PROXY_URL", "(http://localhost:8082)/s2-service/api/v1/")
+	os.Setenv("PROXY_RULE_S1", "/s1/>http://localhost:8081")
+	os.Setenv("PROXY_RULE_S2", "/s2/>http://localhost:8082")
 
-	log.Println("Variable: ", os.Getenv("LOGIN_SERVICE_PROXY_URL"))
+	routes := reverseproxy.CollectPathPrefixRoutesFromEnvVar()
+	// or alternatively, you can initialize directly the PathPrefixRoutesMap: 
+	/* 
+           routes := reverseproxy.PathPrefixRoutesMap{
+		"s1": "http://localhost:8081",
+		"s2": "http://localhost:8082",
+	}
+        */
 
-	log.Fatal(reverseproxy.NewReverseProxy().
-		UseMiddleware(JWTMiddleware).
-		UseRequestModifier(modifyRequest).
-		UseResponseModifier(modifyResponse).
+	log.Fatalf("Server error: %s", reverseproxy.New(routes).
+		WithMiddlewares(middlewares.RequestLoggerMiddleware, JWTMiddleware).
 		Start(8080))
-
 }
 
 func JWTMiddleware(handler http.Handler) http.Handler {
@@ -34,20 +40,4 @@ func JWTMiddleware(handler http.Handler) http.Handler {
 		}
 		handler.ServeHTTP(w, r)
 	})
-}
-
-func modifyRequest(req *http.Request) {
-	req.Header.Set("X-Proxy", "Simple-Reverse-Proxy")
-}
-
-func modifyResponse(resp *http.Response) error {
-	resp.Header.Set("X-Proxy", "Magical")
-	return nil
-}
-
-func errorHandler() func(http.ResponseWriter, *http.Request, error) {
-	return func(w http.ResponseWriter, req *http.Request, err error) {
-		fmt.Printf("Got error while modifying response: %v \n", err)
-		return
-	}
 }
