@@ -1,3 +1,6 @@
+/*
+	service S1 must be started before main.go: the reverse proxy is going to proxy the requests prefixed with "s1" to this service 
+*/
 package main
 
 import (
@@ -16,6 +19,8 @@ func main() {
 		w.Write([]byte("Hello from s1-service"))
 		return
 	})
-	log.Fatal(http.ListenAndServe(":8081", nil))
+	
 	log.Println("S1 HTTP server started on port 8081")
+	log.Fatal(http.ListenAndServe(":8081", nil))
+	
 }
