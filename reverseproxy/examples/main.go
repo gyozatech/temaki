@@ -1,3 +1,16 @@
+/*
+	reverse proxy service: it's using env vars to register the routes to the backend services s1 and s2 based on the prefix.
+ 	after having run:
+  		- `go run main_s1.go` on one tab
+    		- `go run main_s2.go` on another tab
+      	you can run the reverse proxy via:
+       		- `go run main.go` onto another tab
+	 then you can test the routes with:
+  		curl -H "Authorization: Bearer abcd" http://localhost:8080/s1/api/v1/status
+    		curl -H "Authorization: Bearer abcd" http://localhost:8080/s1/api/v1/hello
+      		curl -H "Authorization: Bearer abcd" http://localhost:8080/s2/api/v1/status
+		curl -H "Authorization: Bearer abcd" http://localhost:8080/s2/api/v1/hello
+*/
 package main
 
 import (
