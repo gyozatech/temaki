@@ -8,45 +8,42 @@ This package contains a simple HTTP/S Reverse Proxy meant to be imported in your
 
 ## How it works
 
-You must list your services though enviroment variable by using the following convention:
+You must list your services through enviroment variable by using the following convention:
 
-name: `<SERVICENAME>_PROXY_URL`
-value: `(HOST)/common/path/`
+name: `PROXY_RULE_<SERVICENAME>`
+value: `/<pathprefix>/>https://<host:port>`
   
-to get all the calls coming to the reverse proxy host at the path `/common/path/*` to be proxied to their respective hosts.
-  
-For example if you have your reverse proxy server listening to `http://localhost:8080` and your backend service listening to `http://localhost:8081/service-1/api/v1/*`
+The incoming requests having the specified path prefix will be completely redirected to the given host, removing the path prefix and appending the rest of the URL as long as any headers, cookies, query params.
 
-You can get the calls coming to your reverse proxy host at the paths `http://localhost:8080/service-1/api/v1/*` to be all proxied to the backend service at the paths `http://localhost:8081/service-1/api/v1/*`.
-
-This mechanism can be created by setting the following environment variable:
-
-```bash
-export SERVICE_1_PROXY_URL='(http://localhost:8081)/service-1/api/v1/'
-```
-And by programming your reverse proxy this way:
-
+Example:
 ```go
 package main
 
 import (
 	"log"
+	"net/http"
+	"os"
+
 	"github.com/gyozatech/temaki/reverseproxy"
 	"github.com/gyozatech/temaki/middlewares"
-	// "github.com/gyozatech/noodlog" // for logger a)
 )
 
 func main() {
 
-	var logger *log.Logger = log.New(os.Stdout, "", log.LstdFlags)
-	middlewares.SetLogger(logger)
-	// alternative with gyozatech/noodlog:
-	// middlewares.SetLogger(noodlog.NewLogger().EnableTraceCaller())
-	
-	log.Fatal(reverseproxy.NewReverseProxy().
-    	           UseMiddleware(middlewares.RequestLoggerMiddleware).
-			       UseMiddleware(middlewares.CORSMiddleware).
-			       UseMiddleware(middlewares.RecoverPanicMiddleware).
-			       Start(8080))
+	os.Setenv("PROXY_RULE_S1", "/weather/>https://api.weather.com")
+	os.Setenv("PROXY_RULE_S2", "/geo/>https://api.geo.com")
+
+	routes := reverseproxy.CollectPathPrefixRoutesFromEnvVar()
+	// or alternatively, you can initialize directly the PathPrefixRoutesMap: 
+	/* 
+           routes := reverseproxy.PathPrefixRoutesMap{
+		"weather": "https://api.weather.com",
+		"geo": "https://api.geo.com",
+	}
+        */
+
+	log.Fatalf("Server error: %s", reverseproxy.New(routes).
+		WithMiddlewares(middlewares.RequestLoggerMiddleware).
+		Start(8080))
 }
 ```
