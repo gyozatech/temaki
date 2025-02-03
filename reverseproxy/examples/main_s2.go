@@ -1,3 +1,6 @@
+/*
+	service S2 must be started before main.go: the reverse proxy is going to proxy the requests prefixed with "s2" to this service 
+*/
 package main
 
 import (
@@ -16,7 +19,8 @@ func main() {
 		w.Write([]byte("Hello from s2-service"))
 		return
 	})
-
-	log.Fatal(http.ListenAndServe(":8082", nil))
+	
 	log.Println("S2 HTTP server started on port 8082")
+	log.Fatal(http.ListenAndServe(":8082", nil))
+	
 }
