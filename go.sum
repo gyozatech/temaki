@@ -1,2 +1,4 @@
+github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/gyozatech/noodlog v1.0.2 h1:Ohg+xm+C9IDpqX7KxhnV22yaGq0usf5Vdqs6o2QuJpA=
 github.com/gyozatech/noodlog v1.0.2/go.mod h1:W1tDQeyBu7G8nnJ6u+gAyoxDfejb23k5NtRrFfUjA1E=

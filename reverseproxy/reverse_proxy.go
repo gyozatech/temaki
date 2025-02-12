@@ -29,12 +29,12 @@ type ReverseProxy struct {
 }
 
 // WithMiddlewares allows specifying the http middleware to be applied to all routes
-func (r *ReverseProxy) WithMiddlewares(middlewares ...Middleware) *ReverseProxy {
-	if r.middlewares == nil {
-		r.middlewares = []Middleware{}
+func (rp *ReverseProxy) WithMiddlewares(middlewares ...Middleware) *ReverseProxy {
+	if rp.middlewares == nil {
+		rp.middlewares = []Middleware{}
 	}
-	r.middlewares = append(r.middlewares, middlewares...)
-	return r
+	rp.middlewares = append(rp.middlewares, middlewares...)
+	return rp
 }
 
 // CollectPathPrefixRoutesFromEnvVar collects the env vars like:
@@ -63,8 +63,8 @@ func CollectPathPrefixRoutesFromEnvVar() PathPrefixRoutesMap {
 	return routesMap
 }
 
-func (r *ReverseProxy) applyMiddlewares(handler http.Handler) http.Handler {
-	for _, m := range r.middlewares {
+func (rp *ReverseProxy) applyMiddlewares(handler http.Handler) http.Handler {
+	for _, m := range rp.middlewares {
 		handler = m(handler)
 	}
 	return handler
@@ -89,7 +89,8 @@ func adaptRoutesMap(routes PathPrefixRoutesMap) PathPrefixRoutesMap {
 		if !strings.HasSuffix(prefixStr, "/") {
 			prefixStr = prefixStr + "/"
 		}
-		if !strings.HasPrefix(hostStr, "http") {
+		if !strings.HasPrefix(hostStr, "http") && !strings.HasPrefix(hostStr, "ws") {
+			// setting http as default protocol if no https/http or wss/ws protocol is specified
 			hostStr = "http://" + hostStr
 		}
 		adaptedRoutesMap[PathPrefix(prefixStr)] = TargetHost(strings.TrimSuffix(hostStr, "/"))
@@ -97,43 +98,61 @@ func adaptRoutesMap(routes PathPrefixRoutesMap) PathPrefixRoutesMap {
 	return adaptedRoutesMap
 }
 
-// ReverseProxyHandler creates a reverse proxy for the specified target URL.
-// It also supports optional path rewriting.
-func ReverseProxyHandler(target string, rewritePath string) http.Handler {
-	targetURL, err := url.Parse(target)
-	if err != nil {
-		log.Fatalf("Error parsing target URL: %v", err)
-	}
-
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-
-		if rewritePath != "" && strings.HasPrefix(req.URL.Path, rewritePath) {
-			newPath := strings.TrimPrefix(req.URL.Path, rewritePath)
-			if !strings.HasPrefix(newPath, "/") {
-				newPath = "/" + newPath
-			}
-			req.URL.Path = newPath
-		}
-		req.Host = targetURL.Host
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Proxying request to target: %s%s", target, r.URL.Path)
-		proxy.ServeHTTP(w, r)
-	})
-}
-
 // Start starts the reverse proxy on the specified port
-func (r *ReverseProxy) Start(port int) error {
-
-	for pathPrefix, targetHost := range r.pathPrefixRoutesMap {
-		http.Handle(string(pathPrefix), r.applyMiddlewares(ReverseProxyHandler(string(targetHost), string(pathPrefix))))
-	}
+func (rp *ReverseProxy) Start(port int) error {
+	// we manage every prefix from a single / root path to avoid inconvenient HTTP statuses 302
+	http.Handle("/", rp.applyMiddlewares(toHTTPHandler(rp.handleFunc)))
 
 	log.Printf("Starting reverse proxy server on port %d", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+}
+
+func (rp *ReverseProxy) handleFunc(w http.ResponseWriter, req *http.Request) {
+	for pathPrefix, targetHost := range rp.pathPrefixRoutesMap {
+		if strings.HasPrefix(req.URL.Path, strings.TrimSuffix(string(pathPrefix), "/")) {
+			targetURL, err := url.Parse(string(targetHost))
+			if err != nil {
+				log.Printf("Error parsing target URL: %v", err)
+				http.Error(w, fmt.Sprintf("Error parsing target URL: %s", err), http.StatusInternalServerError)
+				return
+			}
+
+			proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+			originalDirector := proxy.Director
+			proxy.Director = func(req *http.Request) {
+				originalDirector(req)
+				req.Header.Set("X-Forwarded-Host", req.Host)
+				req.Header.Set("X-Real-IP", req.RemoteAddr)
+
+				rewritePath := string(pathPrefix)
+				if rewritePath != "" && strings.HasPrefix(req.URL.Path, rewritePath) {
+					newPath := strings.TrimPrefix(req.URL.Path, rewritePath)
+					if !strings.HasPrefix(newPath, "/") {
+						newPath = "/" + newPath
+					}
+					req.URL.Path = newPath
+				}
+				req.Host = targetURL.Host
+			}
+
+			// WebSocket request
+			if isWebSocketRequest(req) {
+				log.Println("Handling WebSocket Upgrade...")
+				handleWebSocket(w, req, string(targetHost))
+				return
+			}
+
+			// HTTP/HTTPS request
+			log.Printf("Proxying request to target: %s%s", targetHost, req.URL.Path)
+			proxy.ServeHTTP(w, req)
+			return
+		}
+	}
+	http.Error(w, "Not Found", http.StatusNotFound)
+}
+
+// convert a func(http.ResponseWriter, *http.Request) into an http.Handler to adapt http.HandleFunc to http.Handle
+func toHTTPHandler(fn func(http.ResponseWriter, *http.Request)) http.Handler {
+	return http.HandlerFunc(fn)
 }
