@@ -1,8 +1,11 @@
 package middlewares
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"runtime/debug"
@@ -71,6 +74,15 @@ func (rww ResponseWriterWrapper) Header() http.Header {
 func (rww ResponseWriterWrapper) WriteHeader(statusCode int) {
 	(*rww.statusCode) = statusCode
 	(*rww.w).WriteHeader(statusCode)
+}
+
+// Hijack allows the ResponseWriterWrapper to implement the http.Hijacker interface necessary to upgrade the connection to a WebSocket
+func (rww ResponseWriterWrapper) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := (*rww.w).(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijack not supported")
+	}
+	return h.Hijack()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
