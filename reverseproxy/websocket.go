@@ -26,10 +26,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, targetURL string) {
 		return
 	}
 
-	// Ensure correct WebSocket scheme
-	/*if strings.HasPrefix(remote.Scheme, "http") {
+	// Ensure correct WebSocket scheme: fundamental to substitute http/https scheme with ws/wss scheme
+	if strings.HasPrefix(remote.Scheme, "http") {
 		remote.Scheme = strings.Replace(remote.Scheme, "http", "ws", 1)
-	}*/
+	}
 
 	// Upgrade client connection to WebSocket
 	clientConn, err := wsUpgrader.Upgrade(w, r, nil)
@@ -43,6 +43,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, targetURL string) {
 	serverConn, _, err := websocket.DefaultDialer.Dial(remote.String(), nil)
 	if err != nil {
 		log.Println("Failed to connect to WebSocket server:", err)
+		log.Printf("Error details: TargetURL %s, Remote %s, Host %s, scheme %s", targetURL, remote.String(), remote.Host, remote.Scheme)
 		return
 	}
 	defer serverConn.Close()
