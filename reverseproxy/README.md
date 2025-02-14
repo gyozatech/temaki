@@ -44,6 +44,17 @@ func main() {
 
 	log.Fatalf("Server error: %s", reverseproxy.New(routes).
 		WithMiddlewares(middlewares.RequestLoggerMiddleware).
+		WithModifyRequest(modifyReqFn).
+		WithModifyResponse(modifyRespFn).
 		Start(8080))
+}
+
+func modifyReqFn(req *http.Request){
+   req.Header.Set("X-Custom-Header", "ModifiedByProxy")
+}
+
+func modifyRespFn(resp *http.Response) error {
+	resp.Header.Add("X-Proxy-Modified", "true")
+	return nil
 }
 ```

@@ -13,6 +13,12 @@ import (
 // Middleware represent a HTTP middleware for all incoming requests
 type Middleware func(next http.Handler) http.Handler
 
+// ModifyResponse is the function to adapt the response before returning it to the user
+type ModifyResponse func(resp *http.Response) error
+
+// ModifyRequest is the function to adapt the request before proxying it
+type ModifyRequest func(req *http.Request)
+
 // PathPrefix is the prefix of the path to find a match in the request path
 type PathPrefix string
 
@@ -26,6 +32,8 @@ type PathPrefixRoutesMap map[PathPrefix]TargetHost
 type ReverseProxy struct {
 	middlewares         []Middleware
 	pathPrefixRoutesMap PathPrefixRoutesMap
+	modifyRequest       ModifyRequest
+	modifyResponse      ModifyResponse
 }
 
 // WithMiddlewares allows specifying the http middleware to be applied to all routes
@@ -34,6 +42,18 @@ func (rp *ReverseProxy) WithMiddlewares(middlewares ...Middleware) *ReverseProxy
 		rp.middlewares = []Middleware{}
 	}
 	rp.middlewares = append(rp.middlewares, middlewares...)
+	return rp
+}
+
+// WithModifyRequest adds a request modifier to the reverse proxy
+func (rp *ReverseProxy) WithModifyRequest(mreq ModifyRequest) *ReverseProxy {
+	rp.modifyRequest = mreq
+	return rp
+}
+
+// WithModifyResponse adds a response modifier to the reverse proxy
+func (rp *ReverseProxy) WithModifyResponse(mresp ModifyResponse) *ReverseProxy {
+	rp.modifyResponse = mresp
 	return rp
 }
 
@@ -122,6 +142,9 @@ func (rp *ReverseProxy) handleFunc(w http.ResponseWriter, req *http.Request) {
 			originalDirector := proxy.Director
 			proxy.Director = func(req *http.Request) {
 				originalDirector(req)
+				if rp.modifyRequest != nil {
+					rp.modifyRequest(req)
+				}
 				req.Header.Set("X-Forwarded-Host", req.Host)
 				req.Header.Set("X-Real-IP", req.RemoteAddr)
 
@@ -136,14 +159,23 @@ func (rp *ReverseProxy) handleFunc(w http.ResponseWriter, req *http.Request) {
 				req.Host = targetURL.Host
 			}
 
-			// WebSocket request
+			// WebSocket request *******
 			if isWebSocketRequest(req) {
 				log.Println("Handling WebSocket Upgrade...")
 				handleWebSocket(w, req, string(targetHost))
 				return
 			}
 
-			// HTTP/HTTPS request
+			// HTTP/HTTPS request ******
+			// Modify response before sending to client (only for http/https not ws/wss)
+			if rp.modifyResponse != nil {
+				proxy.ModifyResponse = rp.modifyResponse
+			}
+
+			// Handle errors (optional)
+			proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+				http.Error(w, "Proxy Error: "+err.Error(), http.StatusBadGateway)
+			}
 			log.Printf("Proxying request to target: %s%s", targetHost, req.URL.Path)
 			proxy.ServeHTTP(w, req)
 			return
